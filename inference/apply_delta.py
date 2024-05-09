@@ -4,7 +4,7 @@ Apply the delta weights on top of a base model.
 
 """
 import sys
-sys.path.append('../train')
+sys.path.append('./train')
 
 from typing import Optional
 

@@ -33,12 +33,26 @@ def generate_with_enforced_revisions(model, tokenizer, prompt: str, temperature:
             logits = out.logits
             past_key_values = out.past_key_values
         else:
+            #print(past_key_values)
+            #past_key_values[0][0] = past_key_values[0][0][:, :, :2047, :]
+            trimmed_past_key_values = []
+            for tup in past_key_values:
+                trimmed_past_key_values.append(
+                     (tup[0][:, :, :2047, :], tup[1][:, :, :2047, :])
+                )
+            trimmed_past_key_values = tuple(trimmed_past_key_values)
             attention_mask = torch.ones(
-                1, past_key_values[0][0].shape[-2] + 1, device=device)
-            out = model(input_ids=torch.as_tensor([[token]], device=device),
+                1, trimmed_past_key_values[0][0].shape[-2] + 1, device=device)
+            input_ids = torch.as_tensor([[token]], device=device)
+            #print(f"{input_ids.shape=}, {attention_mask.shape=} {len(past_key_values)=}, {past_key_values[0][0].shape=}")
+            #print(f"{trimmed_past_key_values[0][0].shape=}")
+            #for i in range(len(past_key_values)):
+            #    print(f"{i},{type(past_key_values[i])=}")
+            #    print(f"{len(past_key_values[i])=}")
+            out = model(input_ids=input_ids,
                         use_cache=True,
                         attention_mask=attention_mask,
-                        past_key_values=past_key_values)
+                        past_key_values=trimmed_past_key_values)
             logits = out.logits
             past_key_values = out.past_key_values
 
@@ -132,6 +146,7 @@ def parse(response):
     if "### Answer:" not in response:
         response = "N/A"
     if "### Revision" not in response:
+        # Uses the original answer
         response = response.split('### Answer:')[1].split('\n\n### Feedback')[0]
     else: 
         revision_num = len(response.split('### Revision ')) - 1
@@ -177,7 +192,18 @@ def run_eval(model_path, model_id, question_file, answer_file, num_gpus, max_num
 
 @ray.remote(num_gpus=1)
 @torch.inference_mode()
-def get_model_answers(model_path, model_id, question_jsons, max_num_revisions):
+def get_model_answers(
+    model_path,
+    model_id,
+    question_jsons: list[str],
+    max_num_revisions : int,
+):
+    """
+    Parameters
+    ----------
+    questions_jsons: list[str]
+        list of JSON strings. each JSON string has fields "question_id" and "text"
+    """
     model_path = os.path.expanduser(model_path)
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
     model = AutoModelForCausalLM.from_pretrained(
@@ -189,9 +215,10 @@ def get_model_answers(model_path, model_id, question_jsons, max_num_revisions):
         ques_json = json.loads(line)
         idx = ques_json["question_id"]
         qs = ques_json["text"]
+        ans = ques_json.get("answer", None)
         conv = get_conversation_template(model_id)
         conv.append_message(conv.roles[0], qs)
-        conv.append_message(conv.roles[1], None)
+        conv.append_message(conv.roles[1], ans)
         prompt = conv.get_prompt()
 
         input_ids = tokenizer([prompt]).input_ids
