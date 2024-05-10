@@ -22,9 +22,13 @@ def generate_with_enforced_revisions(model, tokenizer, prompt: str, temperature:
     l_prompt = len(prompt)
     input_ids = tokenizer(prompt).input_ids
     output_ids = list(input_ids)
+    output = tokenizer.decode(output_ids, skip_special_tokens=True)
     revision_not_needed_texts_ids = [tokenizer.encode(s)[2:] for s in revision_not_needed_texts]
 
     revision_needed_input_ids = tokenizer("Revision is needed").input_ids[2:]
+
+    max_new_tokens = min(max_new_tokens, 2048 - len(output_ids))
+    print(f"{max_new_tokens=}")
                 
     for i in range(max_new_tokens):
         if i == 0:
