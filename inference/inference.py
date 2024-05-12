@@ -128,9 +128,9 @@ def generate_with_enforced_revisions(model, tokenizer, prompt: str, temperature:
                 stopped = True
             
         if stopped:
-            return output
+            return output, len(output_ids)
 
-    return output
+    return output, len(output_ids)
 
 def parse(response):
     if "### Answer:" not in response:
@@ -193,14 +193,15 @@ def get_model_answers(model_path, model_id, question_jsons, max_num_revisions):
         ques_json = json.loads(line)
         idx = ques_json["question_id"]
         qs = ques_json["text"]
+        ans = ques_json.get("answer", None)
         conv = get_conversation_template(model_id)
         conv.append_message(conv.roles[0], qs)
-        conv.append_message(conv.roles[1], None)
+        conv.append_message(conv.roles[1], ans)
         prompt = conv.get_prompt()
 
         input_ids = tokenizer([prompt]).input_ids
         if 'selfee' in model_id:
-            original = generate_with_enforced_revisions(
+            original, n_tokens = generate_with_enforced_revisions(
                 model = model,
                 tokenizer = tokenizer,
                 prompt = prompt,
@@ -218,6 +219,7 @@ def get_model_answers(model_path, model_id, question_jsons, max_num_revisions):
                     "text": outputs,
                     "answer_id": ans_id,
                     "model_id": model_id,
+                    "n_tokens": n_tokens,
                     "metadata": {},
                 }
             )
