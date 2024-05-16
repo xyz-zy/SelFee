@@ -22,9 +22,13 @@ def generate_with_enforced_revisions(model, tokenizer, prompt: str, temperature:
     l_prompt = len(prompt)
     input_ids = tokenizer(prompt).input_ids
     output_ids = list(input_ids)
+    output = tokenizer.decode(output_ids, skip_special_tokens=True)
     revision_not_needed_texts_ids = [tokenizer.encode(s)[2:] for s in revision_not_needed_texts]
 
     revision_needed_input_ids = tokenizer("Revision is needed").input_ids[2:]
+
+    max_new_tokens = min(max_new_tokens, 2048 - len(output_ids))
+    print(f"{max_new_tokens=}")
                 
     for i in range(max_new_tokens):
         if i == 0:
@@ -124,9 +128,9 @@ def generate_with_enforced_revisions(model, tokenizer, prompt: str, temperature:
                 stopped = True
             
         if stopped:
-            return output
+            return output, len(output_ids)
 
-    return output
+    return output, len(output_ids)
 
 def parse(response):
     if "### Answer:" not in response:
@@ -189,14 +193,15 @@ def get_model_answers(model_path, model_id, question_jsons, max_num_revisions):
         ques_json = json.loads(line)
         idx = ques_json["question_id"]
         qs = ques_json["text"]
+        ans = ques_json.get("answer", None)
         conv = get_conversation_template(model_id)
         conv.append_message(conv.roles[0], qs)
-        conv.append_message(conv.roles[1], None)
+        conv.append_message(conv.roles[1], ans)
         prompt = conv.get_prompt()
 
         input_ids = tokenizer([prompt]).input_ids
         if 'selfee' in model_id:
-            original = generate_with_enforced_revisions(
+            original, n_tokens = generate_with_enforced_revisions(
                 model = model,
                 tokenizer = tokenizer,
                 prompt = prompt,
@@ -214,6 +219,7 @@ def get_model_answers(model_path, model_id, question_jsons, max_num_revisions):
                     "text": outputs,
                     "answer_id": ans_id,
                     "model_id": model_id,
+                    "n_tokens": n_tokens,
                     "metadata": {},
                 }
             )
